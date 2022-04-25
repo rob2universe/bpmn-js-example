@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>bpmn-js viewer demo</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/bpmn-js@9.0.3/dist/assets/bpmn-js.css">
+    <script src="https://unpkg.com/bpmn-js@9.0.3/dist/bpmn-viewer.development.js"></script>
+    <script src="https://unpkg.com/jquery@3.6.0/dist/jquery.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+        }
+
+        .header input[type=text] {
+            width: 500px;
+            max-width: 100%;
+        }
+
+        .console textarea {
+            width: 100%;
+            min-height: 80px;
+            border: none;
+            padding: 0;
+        }
+
+        .canvas {
+            border: solid 1px black;
+        }
+
+        .djs-container .highlight .djs-outline {
+            stroke-width: 2px;
+            stroke: #08c !important;
+            fill: rgba(82, 180, 21, 0.35) !important;
+        }
+
+        .djs-container .highlight .djs-visual > :nth-child(1) {
+            fill: rgba(82, 180, 21, 0.35) !important;
+        }
+
+        .bpmn-badge {
+            border-radius: 30px;
+            color: #fff;
+            margin-top: -10px;
+            min-width: 20px;
+            position: absolute;
+            text-align: center;
+            display: inline-block;
+            padding: 3px 7px;
+            font-size: 12px;
+            font-weight: bold;
+            line-height: 1;
+            vertical-align: baseline;
+            white-space: nowrap;
+            border-width: 1px;
+            border-style: solid;
+            background-color: #52b415;
+            border-color: #143d52;
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h3>BPMN 2.0 diagram from URL parameter</h3>
+    <p>for instance: http://localhost:8080/viewer.html?processInstanceId=807c52f9-c47d-11ec-9198-9c899b574756</p>
+    <p>
+        <label for="instanceId">processInstanceId: </label><input type="text" id="instanceId" value="xyz"/>
+        <!--        <button id="js-open">Open</button>-->
+    </p>
+</div>
+
+<div class="canvas">
+    <div id="js-canvas"></div>
+</div>
+
+<div class="console">
+    <h3>Console</h3><textarea id="js-console"></textarea>
+</div>
+
+
+<!-- app -->
+<script>
+    function log(str) {
+        let console = $('#js-console');
+        console.val(console.val() + str + '\n');
+    }
+
+    $(document).ready(function () {
+        // get URL query parameters
+        function getParameterByName(name) {
+            var match = RegExp('[?&]' + name + '=([^&]*)').exec(window.location.search);
+            return match && decodeURIComponent(match[1].replace(/\+/g, ' '));
+        }
+
+        // let taskId = getParameterByName('taskId');
+        let processInstanceId = getParameterByName('processInstanceId');
+        instanceId.value = processInstanceId;
+        let restAccess = '/engine-rest';
+
+        // init viewer and log output
+        let viewer = new BpmnJS({
+            container: $('#js-canvas'),
+            height: 500
+        });
+        let container = $('#js-drop-zone');
+
+        //query history and model xml of process instance
+        let piUrl = restAccess + '/history/process-instance/' + processInstanceId;
+        log('Getting process instance from <' + piUrl + '>');
+        $.get(piUrl, function (pi) {
+            let pdUrl = restAccess + '/process-definition/' + pi.processDefinitionId + '/xml'
+            log('Getting process definition from <' + pdUrl + '>');
+            $.get(pdUrl, async function (pd) {
+                // show in viewer
+                try {
+                    const result = await viewer.importXML(pd.bpmn20Xml);
+                    const {warnings} = result;
+                    console.log(warnings);
+                } catch (err) {
+                    log('error: ' + err.message);
+                    console.log(err.message, err.warnings);
+                }
+
+                viewer.get('canvas').zoom('fit-viewport');
+                log('Loading diagram succeeded.');
+                let canvas = viewer.get('canvas');
+                let overlays = viewer.get('overlays');
+
+                container.removeClass('with-error')
+                    .addClass('with-diagram');
+
+                // zoom to fit full viewport
+                canvas.zoom('fit-viewport');
+
+                // load runtime status
+                let aiUrl = restAccess + '/process-instance/' + processInstanceId + '/activity-instances/';
+                log('Getting active activity instances from <' + aiUrl + '>');
+                $.get(aiUrl, function (actInstTree) {
+                    addMarkerForActivities(canvas, actInstTree);
+                }).fail(function () {
+                }); // ignore 404 - ProcessInstance might be ended
+
+                // completed / not scope -> Overlay with Info
+                let aiHistUrl = restAccess + '/history/activity-instance/?processInstanceId=' + processInstanceId;
+                log('Getting activity instance history from <' + aiHistUrl + '>');
+                $.get(aiHistUrl, function (actInstList) {
+                    addHistoryInfoOverlay(overlays, actInstList)
+                });
+            });
+        });
+    });
+
+    function addMarkerForActivities(canvas, actInstTree) {
+
+        if (actInstTree.childTransitionInstances.length == 0 && actInstTree.childActivityInstances.length == 0) {
+            log('Adding marker for ' + actInstTree.activityId)
+            canvas.addMarker(actInstTree.activityId, 'highlight');
+        } else {
+            for (var index = 0; index < actInstTree.childTransitionInstances.length; ++index) {
+                log('Adding marker for ' + actInstTree.activityId)
+                canvas.addMarker(actInstTree.childTransitionInstances[index].activityId, 'highlight');
+            }
+            for (index = 0; index < actInstTree.childActivityInstances.length; ++index) {
+                log('Adding marker for ' + actInstTree.activityId)
+                // add recursively
+                addMarkerForActivities(canvas, actInstTree.childActivityInstances[index]);
+            }
+        }
+    }
+
+    function addHistoryInfoOverlay(overlays, actInstList) {
+
+        for (index = 0; index < actInstList.length; ++index) {
+            var calledPiLink = '';
+            var finished = '';
+            if (actInstList[index].endTime) {
+                finished = '<i class="far fa-check-circle"></i>';
+            }
+            if (actInstList[index].calledProcessInstanceId) {
+                calledPiLink = '<a href="bpmn.html?processInstanceId=' + actInstList[index].calledProcessInstanceId + '"><i class="far fa-arrow-alt-circle-right"></i></a>';
+            }
+            if (finished || calledPiLink) {
+                log('Adding overlays for ' + actInstList[index].activityId)
+                overlays.add(actInstList[index].activityId, {
+                    position: {
+                        top: 0,
+                        right: 0
+                    },
+                    html: '<div class="bpmn-badge">' + finished + calledPiLink + '</div>'
+                });
+            }
+        }
+    }
+</script>
+</body>
+</html>

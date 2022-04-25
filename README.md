@@ -1,5 +1,10 @@
-# vanilla-camunda-template
+# bpmn-js-example
 
-This is a template repository to create a plain vanilla CAMUNDA Platform EE Spring Boot project.
+example usage of [bpmn-js](https://bpmn.io/toolkit/bpmn-js/) mostly based on and just updating:
+[Camunda Consulting BPMN.IO example](https://github.com/camunda-consulting/camunda-7-code-examples/tree/master/snippets/bpmn-io-sample)
 
-This is the best generic starting point!  - Change my mind :)
+## Other resources
+
+https://www.w3schools.com/icons/default.asp
+
+https://getbootstrap.com/docs/5.0/getting-started/introduction/
